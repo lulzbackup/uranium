@@ -8,6 +8,8 @@ from UM.Logger import Logger
 from UM.Resources import Resources
 from UM.Math.Vector import Vector
 from UM.Job import Job
+from UM.Mesh.MeshBuilder import MeshBuilder
+from UM.Scene.ToolHandle import ToolHandle
 
 from UM.View.GL.OpenGL import OpenGL
 
@@ -30,7 +32,7 @@ class Platform(SceneNode.SceneNode):
 
     def render(self, renderer):
         if not self._shader:
-            self._shader = OpenGL.getInstance().createShaderProgram(Resources.getPath(Resources.Shaders, "platform.shader"))
+            self._shader = OpenGL.getInstance().createShaderProgram(Resources.getPath(Resources.Shaders, "toolhandle.shader"))
             if self._texture:
                 self._shader.setTexture(0, self._texture)
             else:
@@ -69,6 +71,23 @@ class Platform(SceneNode.SceneNode):
                         self.setPosition(Vector(0.0, 0.0, 0.0))
                 else:
                     self.setPosition(Vector(0.0, 0.0, 0.0))
+            else:
+                line_len = 25
+                line_wid = 1
+                handle_size = 3
+                mb = MeshBuilder()
+
+                mb.addCube(line_wid, line_len, line_wid, Vector(0, line_len/2, 0), ToolHandle.YAxisColor)
+                mb.addPyramid(handle_size, handle_size, handle_size, center=Vector(0, line_len, 0), color=ToolHandle.YAxisColor)
+
+                mb.addCube(line_len, line_wid, line_wid, Vector(line_len/2, 0, 0), ToolHandle.XAxisColor)
+                mb.addPyramid(handle_size, handle_size, handle_size, center=Vector(line_len, 0, 0), color=ToolHandle.XAxisColor, axis = Vector.Unit_Z, angle = 90)
+
+                mb.addCube(line_wid, line_wid, line_len, Vector(0, 0, line_len/2), ToolHandle.ZAxisColor)
+                mb.addPyramid(handle_size, handle_size, handle_size, center=Vector(0, 0, line_len), color=ToolHandle.ZAxisColor, axis = Vector.Unit_X, angle = -90)
+
+                self.setMeshData(mb.build())
+                self.setPosition(Vector(0.0, 0.0, 0.0))
 
     def _updateTexture(self):
         if not self._global_container_stack or not OpenGL.getInstance():
