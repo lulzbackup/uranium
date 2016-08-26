@@ -72,19 +72,22 @@ class Platform(SceneNode.SceneNode):
                 else:
                     self.setPosition(Vector(0.0, 0.0, 0.0))
             else:
+                settings = Application.getInstance().getGlobalContainerStack()
+                machine_width = settings.getProperty("machine_width", "value")
+                machine_depth = settings.getProperty("machine_depth", "value")
                 line_len = 25
                 line_wid = 1
                 handle_size = 3
                 mb = MeshBuilder()
 
-                mb.addCube(line_wid, line_len, line_wid, Vector(0, line_len/2, 0), ToolHandle.YAxisColor)
-                mb.addPyramid(handle_size, handle_size, handle_size, center=Vector(0, line_len, 0), color=ToolHandle.YAxisColor)
+                mb.addCube(line_wid, line_len, line_wid, Vector(-machine_width/2, line_len/2, machine_depth/2), ToolHandle.YAxisColor)
+                mb.addPyramid(handle_size, handle_size, handle_size, center=Vector(-machine_width/2, line_len, machine_depth/2), color=ToolHandle.YAxisColor)
 
-                mb.addCube(line_len, line_wid, line_wid, Vector(line_len/2, 0, 0), ToolHandle.XAxisColor)
-                mb.addPyramid(handle_size, handle_size, handle_size, center=Vector(line_len, 0, 0), color=ToolHandle.XAxisColor, axis = Vector.Unit_Z, angle = 90)
+                mb.addCube(line_len, line_wid, line_wid, Vector(line_len/2-machine_width/2, 0, machine_depth/2), ToolHandle.XAxisColor)
+                mb.addPyramid(handle_size, handle_size, handle_size, center=Vector(line_len-machine_width/2, 0, machine_depth/2), color=ToolHandle.XAxisColor, axis = Vector.Unit_Z, angle = 90)
 
-                mb.addCube(line_wid, line_wid, line_len, Vector(0, 0, line_len/2), ToolHandle.ZAxisColor)
-                mb.addPyramid(handle_size, handle_size, handle_size, center=Vector(0, 0, line_len), color=ToolHandle.ZAxisColor, axis = Vector.Unit_X, angle = -90)
+                mb.addCube(line_wid, line_wid, line_len, Vector(-machine_width/2, 0, -line_len/2+machine_depth/2), ToolHandle.ZAxisColor)
+                mb.addPyramid(handle_size, handle_size, handle_size, center=Vector(-machine_width/2, 0, -line_len+machine_depth/2), color=ToolHandle.ZAxisColor, axis = Vector.Unit_X, angle = 90)
 
                 self.setMeshData(mb.build())
                 self.setPosition(Vector(0.0, 0.0, 0.0))
