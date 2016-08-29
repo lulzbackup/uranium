@@ -24,6 +24,8 @@ class Platform(SceneNode.SceneNode):
 
         self._load_platform_job = None
         self._shader = None
+        self._axis_shader = None
+        self._has_bed = False
         self._texture = None
         self._global_container_stack = None
         Application.getInstance().globalContainerStackChanged.connect(self._onGlobalContainerStackChanged)
@@ -32,14 +34,19 @@ class Platform(SceneNode.SceneNode):
 
     def render(self, renderer):
         if not self._shader:
-            self._shader = OpenGL.getInstance().createShaderProgram(Resources.getPath(Resources.Shaders, "toolhandle.shader"))
+            self._shader = OpenGL.getInstance().createShaderProgram(Resources.getPath(Resources.Shaders, "platform.shader"))
             if self._texture:
                 self._shader.setTexture(0, self._texture)
             else:
                 self._updateTexture()
+        if not self._axis_shader:
+            self._axis_shader = OpenGL.getInstance().createShaderProgram(Resources.getPath(Resources.Shaders, "platform_axis_block.shader"))
 
         if self.getMeshData():
-            renderer.queueNode(self, shader = self._shader, transparent = True, backface_cull = True, sort = -10)
+            if self._has_bed:
+                renderer.queueNode(self, shader=self._shader, transparent = True, backface_cull = True, sort = -10)
+            else:
+                renderer.queueNode(self, shader=self._axis_shader, transparent=False, backface_cull=True, sort=-10)
             return True
 
     def _onGlobalContainerStackChanged(self):
@@ -61,6 +68,8 @@ class Platform(SceneNode.SceneNode):
                 self._load_platform_job = _LoadPlatformJob(path)
                 self._load_platform_job.finished.connect(self._onPlatformLoaded)
                 self._load_platform_job.start()
+
+                self._has_bed = True
 
                 offset = container.getMetaDataEntry("platform_offset")
                 if offset:
@@ -91,6 +100,7 @@ class Platform(SceneNode.SceneNode):
 
                 self.setMeshData(mb.build())
                 self.setPosition(Vector(0.0, 0.0, 0.0))
+                self._has_bed = False
 
     def _updateTexture(self):
         if not self._global_container_stack or not OpenGL.getInstance():
