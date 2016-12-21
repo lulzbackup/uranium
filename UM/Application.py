@@ -138,6 +138,9 @@ class Application():
     def showMessage(self, message):
         raise NotImplementedError
 
+    def isExitAllowed(self):
+        return True
+
     ##  Get the version of the application
     #   \returns version \type{string}
     def getVersion(self):
