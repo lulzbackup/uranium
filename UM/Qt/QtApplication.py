@@ -5,6 +5,7 @@ import sys
 import os
 import signal
 import platform
+import ctypes
 
 from PyQt5.QtCore import Qt, QObject, QCoreApplication, QEvent, pyqtSlot, QLocale, QTranslator, QLibraryInfo, QT_VERSION_STR, PYQT_VERSION_STR
 from PyQt5.QtQml import QQmlApplicationEngine, qmlRegisterType, qmlRegisterSingletonType
@@ -350,6 +351,51 @@ class QtApplication(QApplication, Application):
             pass
 
         return None
+
+    def preventComputerFromSleeping(self, prevent):
+        """
+        Function used to prevent the computer from going into sleep mode.
+        :param prevent: True = Prevent the system from going to sleep from this point on.
+        :param prevent: False = No longer prevent the system from going to sleep.
+        """
+        Logger.log("d", "Prevent computer from sleeping? " + str(prevent))
+
+        if sys.platform.startswith('win'):
+            ES_CONTINUOUS = 0x80000000
+            ES_SYSTEM_REQUIRED = 0x00000001
+            ES_AWAYMODE_REQUIRED = 0x00000040
+            #SetThreadExecutionState returns 0 when failed, which is ignored. The function should be supported from windows XP and up.
+            if prevent:
+                # For Vista and up we use ES_AWAYMODE_REQUIRED to prevent a print from failing if the PC does go to sleep
+                # As it's not supported on XP, we catch the error and fallback to using ES_SYSTEM_REQUIRED only
+                if ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_AWAYMODE_REQUIRED) == 0:
+                    ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED)
+            else:
+                ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS)
+        elif sys.platform.startswith('darwin'):
+            import objc
+            bundle = objc.initFrameworkWrapper("IOKit",
+            frameworkIdentifier="com.apple.iokit",
+            frameworkPath=objc.pathForFramework("/System/Library/Frameworks/IOKit.framework"),
+            globals=globals())
+            foo = objc.loadBundleFunctions(bundle, globals(), [("IOPMAssertionCreateWithName", b"i@I@o^I")])
+            foo = objc.loadBundleFunctions(bundle, globals(), [("IOPMAssertionRelease", b"iI")])
+            if prevent:
+                success, self.noSnoozeAssertionID = IOPMAssertionCreateWithName(kIOPMAssertionTypeNoDisplaySleep, kIOPMAssertionLevelOn, "Cura is printing", None)
+                if success != kIOReturnSuccess:
+                    self.noSnoozeAssertionID = None
+            else:
+                if hasattr(self, "noSnoozeAssertionID") and self.noSnoozeAssertionID is not None:
+                  IOPMAssertionRelease(self.noSnoozeAssertionID)
+                  self.noSnoozeAssertionID = None
+        else:
+            id = self.getMainWindow().winId()
+            if os.path.isfile("/usr/bin/xdg-screensaver"):
+                try:
+                    cmd = ['xdg-screensaver', 'suspend' if prevent else 'resume', str(int(id))]
+                    subprocess.call(cmd)
+                except:
+                    pass
 
 ##  Internal.
 #
