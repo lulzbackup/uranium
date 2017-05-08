@@ -6,6 +6,7 @@ import os
 import signal
 import platform
 import ctypes
+import subprocess
 
 from PyQt5.QtCore import Qt, QObject, QCoreApplication, QEvent, pyqtSlot, QLocale, QTranslator, QLibraryInfo, QT_VERSION_STR, PYQT_VERSION_STR
 from PyQt5.QtQml import QQmlApplicationEngine, qmlRegisterType, qmlRegisterSingletonType
@@ -395,7 +396,11 @@ class QtApplication(QApplication, Application):
                     cmd = ['xdg-screensaver', 'suspend' if prevent else 'resume', str(int(id))]
                     subprocess.call(cmd)
                 except:
+                    Logger.log("w", "Call to /usr/bin/xdg-screensaver failed, unable to prevent sleep")
                     pass
+            else:
+                Logger.log("w", "No /usr/bin/xdg-screensaver found, unable to prevent sleep")
+
 
 ##  Internal.
 #
