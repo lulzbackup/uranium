@@ -3,9 +3,7 @@
 
 from UM.Tool import Tool
 from UM.Job import Job
-from UM.Logger import Logger
 from UM.Event import Event, MouseEvent, KeyEvent
-from UM.Application import Application
 from UM.Message import Message
 from UM.Scene.ToolHandle import ToolHandle
 from UM.Scene.Selection import Selection
@@ -13,7 +11,8 @@ from UM.Scene.Selection import Selection
 from UM.Math.Plane import Plane
 from UM.Math.Vector import Vector
 from UM.Math.Quaternion import Quaternion
-from UM.Math.Float import Float
+
+from PyQt5.QtCore import Qt
 
 from UM.Operations.RotateOperation import RotateOperation
 from UM.Operations.GroupedOperation import GroupedOperation
@@ -45,6 +44,8 @@ class RotateTool(Tool):
 
         self._angle = None
         self._angle_update_time = None
+
+        self._shortcut_key = Qt.Key_Z
 
         self._progress_message = None
         self._iterations = 0
@@ -400,11 +401,7 @@ class RotateTool(Tool):
         self._iterations = 0
         self._total_iterations = 0
         for selected_object in Selection.getAllSelectedObjects():
-            if not selected_object.callDecoration("isGroup"):
-                self._total_iterations += len(selected_object.getMeshDataTransformed().getVertices()) * 2
-            else:
-                for child in selected_object.getChildren():
-                    self._total_iterations += len(child.getMeshDataTransformed().getVertices()) * 2
+            self._layObjectFlat(selected_object)
 
         self._progress_message.show()
 
@@ -415,6 +412,14 @@ class RotateTool(Tool):
         job = LayFlatJob(operations)
         job.finished.connect(self._layFlatFinished)
         job.start()
+
+    ##  Lays the given object flat. The given object can be a group or not.
+    def _layObjectFlat(self, selected_object):
+        if not selected_object.callDecoration("isGroup"):
+            self._total_iterations += len(selected_object.getMeshDataTransformed().getVertices()) * 2
+        else:
+            for child in selected_object.getChildren():
+                self._layObjectFlat(child)
 
     ##  Called while performing the LayFlatOperation so progress can be shown
     #

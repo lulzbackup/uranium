@@ -54,10 +54,10 @@ class DefinitionContainer(QObject, DefinitionContainerInterface, PluginObject):
     def __init__(self, container_id: str, i18n_catalog = None, *args, **kwargs):
         # Note that we explicitly pass None as QObject parent here. This is to be able
         # to support pickling.
-        super().__init__(parent = None, *args, **kwargs)        
+        super().__init__(parent = None, *args, **kwargs)
 
         self._id = str(container_id)    # type: str
-        self._name = container_id       # type: str
+        self._name = str(container_id)  # type: str
         self._metadata = {}             # type: Dict[str, Any]
         self._definitions = []          # type: List[SettingDefinition]
         self._inherited_files = []      # type: List[str]
@@ -81,6 +81,9 @@ class DefinitionContainer(QObject, DefinitionContainerInterface, PluginObject):
 
     ##  For pickle support
     def __setstate__(self, state):
+        # We need to call QObject.__init__() in order to initialize the underlying C++ object.
+        # pickle doesn't do that so we have to do this here.
+        QObject.__init__(self, parent = None)
         self.__dict__.update(state)
 
     ##  \copydoc ContainerInterface::getId
@@ -164,7 +167,7 @@ class DefinitionContainer(QObject, DefinitionContainerInterface, PluginObject):
     ##  \copydoc ContainerInterface::getProperty
     #
     #   Reimplemented from ContainerInterface.
-    def getProperty(self, key, property_name):
+    def getProperty(self, key, property_name, context = None):
         definition = self._getDefinition(key)
         if not definition:
             return None
@@ -207,11 +210,17 @@ class DefinitionContainer(QObject, DefinitionContainerInterface, PluginObject):
     #   data about inheritance and overrides was lost when deserialising.
     #
     #   Reimplemented from ContainerInterface
-    def serialize(self):
+    def serialize(self, ignored_metadata_keys: Optional[List] = None):
         data = { } # The data to write to a JSON file.
         data["name"] = self.getName()
         data["version"] = DefinitionContainer.Version
         data["metadata"] = self.getMetaData()
+
+        # remove the keys that we want to ignore in the metadata
+        if ignored_metadata_keys:
+            for key in ignored_metadata_keys:
+                if key in data["metadata"]:
+                    del data["metadata"][key]
 
         data["settings"] = { }
         for definition in self.definitions:
@@ -398,8 +407,11 @@ class DefinitionContainer(QObject, DefinitionContainerInterface, PluginObject):
             return
 
         for setting in function.getUsedSettingKeys():
-            # Do not create relation on self
-            if setting == definition.key:
+            # Prevent circular relations between the same setting and the same property
+            # Note that the only property used by SettingFunction is the "value" property, which
+            # is why this is hard coded here.
+            if setting == definition.key and property == "value":
+                Logger.log("w", "Found circular relation for property 'value' between {0} and {1}", definition.key, setting)
                 continue
 
             other = self._getDefinition(setting)

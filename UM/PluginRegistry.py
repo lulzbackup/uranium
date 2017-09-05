@@ -10,14 +10,17 @@ from UM.PluginError import PluginNotFoundError, InvalidMetaDataError
 from UM.Logger import Logger
 from typing import Callable, Any, Optional, types, Dict, List
 
-from PyQt5.QtCore import QObject, pyqtSlot, QUrl, pyqtProperty
+from PyQt5.QtCore import QObject, pyqtSlot, QUrl, pyqtProperty, pyqtSignal
 
 from UM.Resources import Resources
 from UM.PluginObject import PluginObject  # For type hinting
 from UM.Platform import Platform
+from UM.Version import Version
 
 from UM.i18n import i18nCatalog
+import json
 i18n_catalog = i18nCatalog("uranium")
+
 
 ##  A central object to dynamically load modules as plugins.
 #
@@ -29,7 +32,7 @@ i18n_catalog = i18nCatalog("uranium")
 #
 #   [plugins]: docs/plugins.md
 class PluginRegistry(QObject):
-    APIVersion = 3
+    APIVersion = 4
 
     def __init__(self, parent = None):
         super().__init__(parent)
@@ -41,14 +44,21 @@ class PluginRegistry(QObject):
         self._application = None
         self._active_plugins = []  # type: List[str]
 
-        self._supported_file_types = {"plugin": "Uranium Plugin"}
+        self._supported_file_types = {"umplugin": "Uranium Plugin"}
         preferences = Preferences.getInstance()
         preferences.addPreference("general/disabled_plugins", "")
         # The disabled_plugins is explicitly set to None. When actually loading the preferences, it's set to a list.
         # This way we can see the difference between no list and an empty one.
         self._disabled_plugins = None  # type: Optional[List[str]]
 
-    @pyqtProperty("QStringList", constant=True)
+    def addSupportedPluginExtension(self, extension, description):
+        if extension not in self._supported_file_types:
+            self._supported_file_types[extension] = description
+            self.supportedPluginExtensionsChanged.emit()
+
+    supportedPluginExtensionsChanged = pyqtSignal()
+
+    @pyqtProperty("QStringList", notify=supportedPluginExtensionsChanged)
     def supportedPluginExtensions(self):
         file_types = []
         all_types = []
@@ -67,31 +77,72 @@ class PluginRegistry(QObject):
         file_types.append(i18n_catalog.i18nc("@item:inlistbox", "All Files (*)"))
         return file_types
 
+    @pyqtSlot(str, result = bool)
+    def isPluginFile(self, plugin_path: str):
+        extension = os.path.splitext(plugin_path)[1].strip(".")
+        if extension.lower() in self._supported_file_types.keys():
+            return True
+        return False
+
     @pyqtSlot(str, result="QVariantMap")
     def installPlugin(self, plugin_path: str):
+        Logger.log("d", "Install plugin got path: %s", plugin_path)
         plugin_path = QUrl(plugin_path).toLocalFile()
-        Logger.log("d", "Attempting to install a new plugin %s", plugin_path)
+        Logger.log("i", "Attempting to install a new plugin %s", plugin_path)
         local_plugin_path = os.path.join(Resources.getStoragePath(Resources.Resources), "plugins")
-        plugin_id = os.path.splitext(os.path.basename(plugin_path))[0]
-        plugin_folder = os.path.join(local_plugin_path, plugin_id)
-
-        # Check if the local plugins directory exists
-        try:
-            os.makedirs(plugin_folder)
-        except OSError:
-            # The directory is already there. This means the plugin is already installed.
-            Logger.log("w", "The plugin was already installed. Unable to install it again!")
-            return {"status": "duplicate", "message": i18n_catalog.i18nc("@info:status", "Failed to install plugin from <filename>{0}</filename>:\n<message>{1}</message>", plugin_folder, "Plugin was already installed")}
+        plugin_folder = ""
+        result = {"status": "error", "message": "", "id": ""}
+        success_message = i18n_catalog.i18nc("@info:status", "The plugin has been installed.\nPlease re-start the application to activate the plugin.")
 
         try:
             with zipfile.ZipFile(plugin_path, "r") as zip_ref:
-                zip_ref.extractall(plugin_folder)
-        except:  # Installing a new plugin should never crash the application.
-            Logger.logException("d", "An exception occurred while installing plugin ")
-            os.rmdir(plugin_folder)  # Clean up after ourselves.
-            return {"status": "error", "message": i18n_catalog.i18nc("@info:status", "Failed to install plugin from <filename>{0}</filename>:\n<message>{1}</message>", plugin_folder, "Invalid plugin file")}
+                plugin_id = None
+                for file in zip_ref.infolist():
+                    if file.filename.endswith("/"):
+                        plugin_id = file.filename.strip("/")
+                        break
 
-        return {"status": "ok", "message": i18n_catalog.i18nc("@info:status", "The plugin has been installed.\n Please re-start the application to active the plugin.")}
+                if plugin_id is None:
+                    result["message"] = i18n_catalog.i18nc("@info:status", "Failed to install plugin from <filename>{0}</filename>:\n<message>{1}</message>", plugin_path, "Invalid plugin file")
+                    return result
+                result["id"] = plugin_id
+                plugin_folder = os.path.join(local_plugin_path, plugin_id)
+
+                if os.path.isdir(plugin_folder):  # Plugin is already installed by user (so not a bundled plugin)
+                    metadata = {}
+                    with zip_ref.open(plugin_id + "/plugin.json") as metadata_file:
+                        metadata = json.loads(metadata_file.read().decode("utf-8"))
+
+                    if "version" in metadata:
+                        new_version = Version(metadata["version"])
+                        old_version = Version(self.getMetaData(plugin_id)["plugin"]["version"])
+                        if new_version > old_version:
+                            zip_ref.extractall(plugin_folder)
+                            result["status"] = "ok"
+                            result["message"] = success_message
+                            return result
+
+                    Logger.log("w", "The plugin was already installed. Unable to install it again!")
+                    result["status"] = "duplicate"
+                    result["message"] = i18n_catalog.i18nc("@info:status", "Failed to install the plugin;\n<message>{0}</message>", "Plugin was already installed")
+                    return result
+                elif plugin_id in self._plugins:
+                    # Plugin is already installed, but not by the user (eg; this is a bundled plugin)
+                    # TODO: Right now we don't support upgrading bundled plugins at all, but we might do so in the future.
+                    result["message"] = i18n_catalog.i18nc("@info:status", "Failed to install the plugin;\n<message>{0}</message>", "Unable to upgrade or install bundled plugins.")
+                    return result
+
+                zip_ref.extractall(plugin_folder)
+
+        except: # Installing a new plugin should never crash the application.
+            Logger.logException("d", "An exception occurred while installing plugin {path}".format(path = plugin_path))
+
+            result["message"] = i18n_catalog.i18nc("@info:status", "Failed to install plugin from <filename>{0}</filename>:\n<message>{1}</message>", plugin_folder, "Invalid plugin file")
+            return result
+
+        result["status"] = "ok"
+        result["message"] = success_message
+        return result
 
     ##  Check if all required plugins are loaded.
     #   \param required_plugins \type{list} List of ids of plugins that ''must'' be activated.
@@ -153,7 +204,11 @@ class PluginRegistry(QObject):
             raise PluginNotFoundError(plugin_id)
 
         if plugin_id not in self._meta_data:
-            self._populateMetaData(plugin_id)
+            try:
+                self._populateMetaData(plugin_id)
+            except InvalidMetaDataError:
+                return
+
 
         if self._meta_data[plugin_id].get("plugin", {}).get("api", 0) != self.APIVersion:
             Logger.log("i", "Plugin %s uses an incompatible API version, ignoring", plugin_id)
@@ -216,7 +271,10 @@ class PluginRegistry(QObject):
     #   \exception InvalidMetaDataError Raised when no metadata can be found or the metadata misses the right keys.
     def getMetaData(self, plugin_id: str) -> Dict:
         if plugin_id not in self._meta_data:
-            if not self._populateMetaData(plugin_id):
+            try:
+                if not self._populateMetaData(plugin_id):
+                    return {}
+            except InvalidMetaDataError:
                 return {}
 
         return self._meta_data[plugin_id]
@@ -320,12 +378,51 @@ class PluginRegistry(QObject):
     def _populateMetaData(self, plugin_id: str) -> bool:
         plugin = self._findPlugin(plugin_id)
         if not plugin:
-            Logger.log("e", "Could not find plugin %s", plugin_id)
+            Logger.log("w", "Could not find plugin %s", plugin_id)
             return False
 
         meta_data = None
+
+        location = None
+        for folder in self._plugin_locations:
+            location = self._locatePlugin(plugin_id, folder)
+            if location:
+                break
+
+        if not location:
+            Logger.log("w", "Could not find plugin %s", plugin_id)
+            return False
+        location = os.path.join(location, plugin_id)
+
         try:
             meta_data = plugin.getMetaData()
+
+            metadata_file = os.path.join(location, "plugin.json")
+            try:
+                with open(metadata_file, "r") as f:
+                    try:
+                        meta_data["plugin"] = json.loads(f.read())
+                    except json.decoder.JSONDecodeError:
+                        Logger.logException("e", "Failed to parse plugin.json for plugin %s", plugin_id)
+                        raise InvalidMetaDataError(plugin_id)
+
+                    # Check if metadata is valid;
+                    if "version" not in meta_data["plugin"]:
+                        Logger.log("e", "Version must be set!")
+                        raise InvalidMetaDataError(plugin_id)
+
+                    if "i18n-catalog" in meta_data["plugin"]:
+                        # A catalog was set, try to translate a few strings
+                        i18n_catalog = i18nCatalog(meta_data["plugin"]["i18n-catalog"])
+                        if "name" in meta_data["plugin"]:
+                             meta_data["plugin"]["name"] = i18n_catalog.i18n(meta_data["plugin"]["name"])
+                        if "description" in meta_data["plugin"]:
+                            meta_data["plugin"]["description"] = i18n_catalog.i18n(meta_data["plugin"]["description"])
+
+            except FileNotFoundError:
+                Logger.logException("e", "Unable to find the required plugin.json file for plugin %s", plugin_id)
+                raise InvalidMetaDataError(plugin_id)
+
         except AttributeError as e:
             Logger.log("e", "An error occurred getting metadata from plugin %s: %s", plugin_id, str(e))
             raise InvalidMetaDataError(plugin_id)

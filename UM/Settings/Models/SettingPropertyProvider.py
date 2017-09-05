@@ -1,4 +1,4 @@
-# Copyright (c) 2016 Ultimaker B.V.
+# Copyright (c) 2017 Ultimaker B.V.
 # Uranium is released under the terms of the AGPLv3 or higher.
 
 from PyQt5.QtCore import QObject, pyqtProperty, pyqtSignal
@@ -275,13 +275,17 @@ class SettingPropertyProvider(QObject):
                 self.isValueUsedChanged.emit()
             return
 
+        has_values_changed = False
         for property_name in property_names:
             if property_name not in self._watched_properties:
                 continue
 
+            has_values_changed = True
             self._property_map.insert(property_name, self._getPropertyValue(property_name))
 
         self._updateStackLevels()
+        if has_values_changed:
+            self.propertiesChanged.emit()
 
     def _update(self, container = None):
         if not self._stack or not self._watched_properties or not self._key:
@@ -300,6 +304,8 @@ class SettingPropertyProvider(QObject):
         self._value_used = None
         self.isValueUsedChanged.emit()
 
+    ##  Updates the self._stack_levels field, which indicates at which levels in
+    #   the stack the property is set.
     def _updateStackLevels(self):
         levels = []
         # Start looking at the stack this provider is attached to.

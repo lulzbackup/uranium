@@ -8,21 +8,13 @@ i18n_catalog = i18nCatalog("uranium")
 
 def getMetaData():
     return {
-        "type": "mesh_writer",
-        "plugin": {
-            "name": i18n_catalog.i18nc("@label", "STL Writer"),
-            "author": "Ultimaker",
-            "version": "1.0",
-            "description": i18n_catalog.i18nc("@info:whatsthis", "Provides support for writing STL files."),
-            "api": 3
-        },
         "mesh_writer": {
             "output": [
                 {
                     "mime_type": "application/x-stl-ascii",
                     "mode": STLWriter.STLWriter.OutputMode.TextMode,
                     "extension": "stl",
-                    "description": i18n_catalog.i18nc("@item:inlistbox", "STL File (Ascii)")
+                    "description": i18n_catalog.i18nc("@item:inlistbox", "STL File (ASCII)")
                 },
                 {
                     "mime_type": "application/x-stl-binary",

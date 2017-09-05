@@ -1,4 +1,4 @@
-# Copyright (c) 2015 Ultimaker B.V.
+# Copyright (c) 2017 Ultimaker B.V.
 # Uranium is released under the terms of the AGPLv3 or higher.
 
 from enum import IntEnum
@@ -26,6 +26,7 @@ class BackendState(IntEnum):
     Done = 3
     Error = 4
     Disabled = 5
+
 
 ##      Base class for any backend communication (separate piece of software).
 #       It makes use of the Socket class from libArcus for the actual communication bits.
@@ -69,7 +70,9 @@ class Backend(PluginObject):
                 Logger.log("d", "Engine process is killed. Received return code %s", self._process.wait())
 
             self._process = self._runEngineProcess(command)
-            Logger.log("i", "Started engine process: %s" % (self.getEngineCommand()[0]))
+            if self._process is None: #Failed to start engine.
+                return
+            Logger.log("i", "Started engine process: %s", self.getEngineCommand()[0])
             self._backendLog(bytes("Calling engine with: %s\n" % self.getEngineCommand(), "utf-8"))
             t = threading.Thread(target = self._storeOutputToLogThread, args = (self._process.stdout,))
             t.daemon = True
@@ -78,7 +81,7 @@ class Backend(PluginObject):
             t.daemon = True
             t.start()
         except FileNotFoundError as e:
-            Logger.log("e", "Unable to find backend executable: %s" % (self.getEngineCommand()[0]))
+            Logger.log("e", "Unable to find backend executable: %s", self.getEngineCommand()[0])
 
     def close(self):
         if self._socket:
@@ -135,7 +138,10 @@ class Backend(PluginObject):
             su.wShowWindow = subprocess.SW_HIDE
             kwargs["startupinfo"] = su
             kwargs["creationflags"] = 0x00004000  # BELOW_NORMAL_PRIORITY_CLASS
-        return subprocess.Popen(command_list, stdin = subprocess.DEVNULL, stdout = subprocess.PIPE, stderr = subprocess.PIPE, **kwargs)
+        try:
+            return subprocess.Popen(command_list, stdin = subprocess.DEVNULL, stdout = subprocess.PIPE, stderr = subprocess.PIPE, **kwargs)
+        except PermissionError:
+            Logger.log("e", "Couldn't start back-end: No permission to execute process.")
 
     def _storeOutputToLogThread(self, handle):
         while True:

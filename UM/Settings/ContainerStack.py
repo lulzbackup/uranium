@@ -14,6 +14,7 @@ from UM.Logger import Logger
 from UM.MimeTypeDatabase import MimeTypeDatabase, MimeType
 from UM.Settings.DefinitionContainer import DefinitionContainer #For getting all definitions in this stack.
 from UM.Settings.Interfaces import ContainerInterface, ContainerRegistryInterface
+from UM.Settings.PropertyEvaluationContext import PropertyEvaluationContext
 from UM.Settings.SettingFunction import SettingFunction
 from UM.Settings.Validator import ValidatorState
 
@@ -50,13 +51,13 @@ class ContainerStack(QObject, ContainerInterface, PluginObject):
     ##  Constructor
     #
     #   \param stack_id \type{string} A unique, machine readable/writable ID.
-    def __init__(self, stack_id, *args, **kwargs):
+    def __init__(self, stack_id: str, *args, **kwargs):
         # Note that we explicitly pass None as QObject parent here. This is to be able
         # to support pickling.
         super().__init__(parent = None, *args, **kwargs)
 
         self._id = str(stack_id)  # type: str
-        self._name = stack_id  # type: str
+        self._name = str(stack_id)  # type: str
         self._metadata = {}
         self._containers = []  # type: List[ContainerInterface]
         self._next_stack = None  # type: Optional[ContainerStack]
@@ -194,10 +195,14 @@ class ContainerStack(QObject, ContainerInterface, PluginObject):
     #   Note that if the property value is a function, this method will return the
     #   result of evaluating that property with the current stack. If you need the
     #   actual function, use getRawProperty()
-    def getProperty(self, key: str, property_name: str):
+    def getProperty(self, key: str, property_name: str, context: Optional[PropertyEvaluationContext] = None):
         value = self.getRawProperty(key, property_name)
         if isinstance(value, SettingFunction):
-            return value(self)
+            if context is not None:
+                context.pushContainer(self)
+            value = value(self, context)
+            if context is not None:
+                context.popContainer()
 
         return value
 
@@ -259,7 +264,7 @@ class ContainerStack(QObject, ContainerInterface, PluginObject):
     #   Reimplemented from ContainerInterface
     #
     #   TODO: Expand documentation here, include the fact that this should _not_ include all containers
-    def serialize(self):
+    def serialize(self, ignored_metadata_keys: Optional[List] = None):
         parser = configparser.ConfigParser(interpolation = None, empty_lines_in_values = False)
 
         parser["general"] = {}
@@ -267,9 +272,13 @@ class ContainerStack(QObject, ContainerInterface, PluginObject):
         parser["general"]["name"] = str(self._name)
         parser["general"]["id"] = str(self._id)
 
+        if ignored_metadata_keys is None:
+            ignored_metadata_keys = []
         parser["metadata"] = {}
         for key, value in self._metadata.items():
-            parser["metadata"][key] = str(value)
+            # only serialize the data that's not in the ignore list
+            if key not in ignored_metadata_keys:
+                parser["metadata"][key] = str(value)
 
         parser.add_section("containers")
         for index in range(len(self._containers)):
@@ -332,8 +341,7 @@ class ContainerStack(QObject, ContainerInterface, PluginObject):
 
         self._containers = []
         self._metadata = {}
-
-        self._name = parser["general"].get("name")
+        self.setName(parser["general"].get("name"))
         self._id = parser["general"].get("id")
 
         if "metadata" in parser:

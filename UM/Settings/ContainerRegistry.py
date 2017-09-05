@@ -1,12 +1,12 @@
-    # Copyright (c) 2016 Ultimaker B.V.
+# Copyright (c) 2017 Ultimaker B.V.
 # Uranium is released under the terms of the AGPLv3 or higher.
 
 import os
-import re #For finding containers with asterisks in the constraints.
+import re #For finding containers with asterisks in the constraints and for detecting backup files.
 import urllib #For ensuring container file names are proper file names
 import urllib.parse
 import pickle #For serializing/deserializing Python classes to binary files
-from typing import List, cast
+from typing import List, Optional, cast
 import collections
 import time
 
@@ -54,8 +54,12 @@ class ContainerRegistry(ContainerRegistryInterface):
         self._resource_types = [Resources.DefinitionContainers] # type: List[int]
         self._query_cache = collections.OrderedDict() # This should really be an ordered set but that does not exist...
 
+        #Since queries are based on metadata, we need to make sure to clear the cache when a container's metadata changes.
+        self.containerMetaDataChanged.connect(self._clearQueryCache)
+
     containerAdded = Signal()
     containerRemoved = Signal()
+    containerMetaDataChanged = Signal()
 
     def addResourceType(self, type: int) -> None:
         self._resource_types.append(type)
@@ -141,6 +145,8 @@ class ContainerRegistry(ContainerRegistryInterface):
     #   that were already added when the first call to this method happened will not be re-added.
     def load(self) -> None:
         files = []
+        old_file_expression = re.compile(r"\{sep}old\{sep}\d+\{sep}".format(sep = os.sep))
+
         for resource_type in self._resource_types:
             resources = Resources.getAllResourcesOfType(resource_type)
 
@@ -152,6 +158,10 @@ class ContainerRegistry(ContainerRegistryInterface):
             # Pre-process the list of files to insert relevant data
             # Most importantly, we need to ensure the loading order is DefinitionContainer, InstanceContainer, ContainerStack
             for path in resources:
+                if old_file_expression.search(path):
+                    # This is a backup file, ignore it.
+                    continue
+
                 try:
                     mime = MimeTypeDatabase.getMimeTypeForFile(path)
                 except MimeTypeDatabase.MimeTypeNotFoundError:
@@ -175,32 +185,33 @@ class ContainerRegistry(ContainerRegistryInterface):
         # Sort the list of files by type_priority so we can ensure correct loading order.
         files = sorted(files, key = lambda i: i[0])
         resource_start_time = time.time()
-        for _, container_id, file_path, read_only, container_type in files:
-            if container_id in self._id_container_cache:
-                Logger.log("c", "Found a container with a duplicate ID: %s", container_id)
-                Logger.log("c", "Existing container is %s, trying to load %s from %s", self._id_container_cache[container_id], container_type, file_path)
-                continue
+        with self.lockCache(): #Because we might be writing cache files.
+            for _, container_id, file_path, read_only, container_type in files:
+                if container_id in self._id_container_cache:
+                    Logger.log("c", "Found a container with a duplicate ID: %s", container_id)
+                    Logger.log("c", "Existing container is %s, trying to load %s from %s", self._id_container_cache[container_id], container_type, file_path)
+                    continue
 
-            try:
-                if issubclass(container_type, DefinitionContainer):
-                    definition = self._loadCachedDefinition(container_id, file_path)
-                    if definition:
-                        self.addContainer(definition)
-                        continue
+                try:
+                    if issubclass(container_type, DefinitionContainer):
+                        definition = self._loadCachedDefinition(container_id, file_path)
+                        if definition:
+                            self.addContainer(definition)
+                            continue
 
-                new_container = container_type(container_id)
-                with open(file_path, encoding = "utf-8") as f:
-                    new_container.deserialize(f.read())
-                new_container.setReadOnly(read_only)
-                new_container.setPath(file_path)
+                    new_container = container_type(container_id)
+                    with open(file_path, encoding = "utf-8") as f:
+                        new_container.deserialize(f.read())
+                    new_container.setReadOnly(read_only)
+                    new_container.setPath(file_path)
 
-                if issubclass(container_type, DefinitionContainer):
-                    self._saveCachedDefinition(new_container)
+                    if issubclass(container_type, DefinitionContainer):
+                        self._saveCachedDefinition(new_container)
 
-                self.addContainer(new_container)
-            except Exception as e:
-                Logger.logException("e", "Could not deserialize container %s", container_id)
-        Logger.log("d", "Loading data into container registry took %s seconds", time.time() - resource_start_time)
+                    self.addContainer(new_container)
+                except Exception as e:
+                    Logger.logException("e", "Could not deserialize container %s", container_id)
+            Logger.log("d", "Loading data into container registry took %s seconds", time.time() - resource_start_time)
 
     @UM.FlameProfiler.profile
     def addContainer(self, container: ContainerInterface) -> None:
@@ -210,8 +221,7 @@ class ContainerRegistry(ContainerRegistryInterface):
             return
 
         if hasattr(container, "metaDataChanged"):
-            # Since queries are based on metadata, we need to make sure to clear the cache when a container's metadata changes.
-            container.metaDataChanged.connect(self._clearQueryCache)
+            container.metaDataChanged.connect(self._onContainerMetaDataChanged)
 
         self._containers.append(container)
         self._id_container_cache[container.getId()] = container
@@ -230,7 +240,7 @@ class ContainerRegistry(ContainerRegistryInterface):
             self._deleteFiles(container)
 
             if hasattr(container, "metaDataChanged"):
-                container.metaDataChanged.disconnect(self._clearQueryCache)
+                container.metaDataChanged.disconnect(self._onContainerMetaDataChanged)
 
             self._clearQueryCache()
             self.containerRemoved.emit(container)
@@ -342,7 +352,8 @@ class ContainerRegistry(ContainerRegistryInterface):
 
         if not name: #Wait, that deleted everything!
             name = "Profile"
-        elif not self.findContainers(id = name, ignore_case = True) and not self.findContainers(name = name):
+        elif not self.findContainers(id = original.strip(), ignore_case = True) and not self.findContainers(name = original.strip()):
+            # Check if the stripped version of the name is unique (note that this can still have the number in it)
             return original.strip()
 
         unique_name = name
@@ -448,7 +459,6 @@ class ContainerRegistry(ContainerRegistryInterface):
 
             for file_path in definition.getInheritedFiles():
                 if os.path.getmtime(file_path) > cache_mtime:
-                    Logger.log("d", "Definition file %s is newer than cache, ignoring cached version", file_path)
                     return None
 
             return definition
@@ -466,17 +476,37 @@ class ContainerRegistry(ContainerRegistryInterface):
         # Ensure the cache path exists
         os.makedirs(os.path.dirname(cache_path), exist_ok=True)
 
-        with open(cache_path, "wb") as f:
-            pickle.dump(definition, f)
+        try:
+            with open(cache_path, "wb") as f:
+                pickle.dump(definition, f)
+        except RecursionError:
+            #Sometimes a recursion error in pickling occurs here.
+            #The cause is unknown. It must be some circular reference in the definition instances or definition containers.
+            #Instead of saving a partial cache and raising an exception, simply fail to save the cache.
+            #See CURA-4024.
+            Logger.log("w", "The definition cache for definition {definition_id} failed to pickle.".format(definition_id = definition.getId()))
+            if os.path.exists(cache_path):
+                os.remove(cache_path) #The pickling might be half-complete, which causes EOFError in Pickle when you load it later.
 
     # Clear the internal query cache
     def _clearQueryCache(self, *args, **kwargs):
         self._query_cache.clear()
 
+    ##  Called when any container's metadata changed.
+    #
+    #   This function passes it on to the containerMetaDataChanged signal. Sadly
+    #   that doesn't work automatically between pyqtSignal and UM.Signal.
+    def _onContainerMetaDataChanged(self, *args, **kwargs):
+        self.containerMetaDataChanged.emit(*args, **kwargs)
+
     ##  Get the lock filename including full path
     #   Dependent on when you call this function, Resources.getConfigStoragePath may return different paths
     def getLockFilename(self):
         return Resources.getStoragePath(Resources.Resources, CONFIG_LOCK_FILENAME)
+
+    ##  Get the cache lock filename including full path.
+    def getCacheLockFilename(self):
+        return Resources.getStoragePath(Resources.Cache, CONFIG_LOCK_FILENAME)
 
     ##  Contextmanager to create a lock file and remove it afterwards.
     def lockFile(self):
@@ -485,6 +515,15 @@ class ContainerRegistry(ContainerRegistryInterface):
             timeout = 10,
             wait_msg = "Waiting for lock file in local config dir to disappear..."
             )
+
+    ##  Context manager to create a lock file for the cache directory and remove
+    #   it afterwards.
+    def lockCache(self):
+        return LockFile(
+            self.getCacheLockFilename(),
+            timeout = 10,
+            wait_msg = "Waiting for lock file in cache directory to disappear."
+        )
 
     ##  Get the singleton instance for this class.
     @classmethod
@@ -528,15 +567,15 @@ class _EmptyInstanceContainer(InstanceContainer):
     def isReadOnly(self) -> bool:
         return True
 
-    def getProperty(self, key, property_name):
+    def getProperty(self, key, property_name, context = None):
         return None
 
-    def setProperty(self, key, property_name, property_value, container = None):
+    def setProperty(self, key, property_name, property_value, container = None, set_from_cache = False):
         Logger.log("e", "Setting property %s of container %s which should remain empty", key, self.getName())
         return
 
     def getConfigurationType(self) -> str:
         return ""  # FIXME: not sure if this is correct
 
-    def serialize(self) -> str:
+    def serialize(self, ignored_metadata_keys: Optional[List] = None) -> str:
         return "[general]\n version = 2\n name = empty\n definition = fdmprinter\n"

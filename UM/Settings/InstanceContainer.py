@@ -1,4 +1,4 @@
-# Copyright (c) 2016 Ultimaker B.V.
+# Copyright (c) 2017 Ultimaker B.V.
 # Uranium is released under the terms of the AGPLv3 or higher.
 
 import configparser
@@ -45,11 +45,11 @@ class InstanceContainer(QObject, ContainerInterface, PluginObject):
     ##  Constructor
     #
     #   \param container_id A unique, machine readable/writable ID for this container.
-    def __init__(self, container_id, *args, **kwargs):
+    def __init__(self, container_id: str, *args, **kwargs):
         super().__init__(parent = None, *args, **kwargs)
 
         self._id = str(container_id)    # type: str
-        self._name = container_id       # type: str
+        self._name = str(container_id)  # type: str
         self._definition = None         # type: DefinitionContainerInterface
         self._metadata = {}
         self._instances = {}            # type: Dict[str, SettingInstance]
@@ -74,6 +74,7 @@ class InstanceContainer(QObject, ContainerInterface, PluginObject):
         new_container._instances = copy.deepcopy(self._instances, memo)
         for instance in new_container._instances.values(): #Set the back-links of the new instances correctly to the copied container.
             instance._container = new_container
+            instance.propertyChanged.connect(new_container.propertyChanged)
         new_container._read_only = self._read_only
         new_container._dirty = self._dirty
         new_container._path = copy.deepcopy(self._path, memo)
@@ -81,10 +82,11 @@ class InstanceContainer(QObject, ContainerInterface, PluginObject):
         return new_container
 
     def __eq__(self, other):
-        self._instantiateCachedValues()
         if type(self) != type(other):
             return False  # Type mismatch
 
+        self._instantiateCachedValues()
+        other._instantiateCachedValues()
         if self._id != other.getId():
             return False  # ID mismatch
 
@@ -255,7 +257,7 @@ class InstanceContainer(QObject, ContainerInterface, PluginObject):
     ##  \copydoc ContainerInterface::getProperty
     #
     #   Reimplemented from ContainerInterface
-    def getProperty(self, key, property_name):
+    def getProperty(self, key, property_name, context = None):
         self._instantiateCachedValues()
         if key in self._instances:
             try:
@@ -269,8 +271,40 @@ class InstanceContainer(QObject, ContainerInterface, PluginObject):
     #
     #   Reimplemented from ContainerInterface.
     def hasProperty(self, key, property_name):
-        self._instantiateCachedValues()
+        # --- Kinda a hack:
+        # When we check if a property exists, it is not necessary to flush the cache because we simply want to know
+        # whether it is there. Flushing the cache can cause propertyChanged signals being emitted, and, as a result,
+        # may cause undesired behaviours.
+        #
+        # So, in this case, we only instantiate the missing setting instances that are present in the cache (if any)
+        # **WITHOUT** applying the cached values. This way there won't be any property changed signals when we are
+        # just checking if a property exists.
+        #
+        self._instantiateMissingSettingInstancesInCache()
+        if self._cached_values and key in self._cached_values and property_name == "value":
+            return True
         return key in self._instances and hasattr(self._instances[key], property_name)
+
+    ##  Creates SettingInstances that are missing in this InstanceContainer from the cache if any.
+    #   This function will **ONLY instantiate SettingInstances. The cached values will not be applied.**
+    def _instantiateMissingSettingInstancesInCache(self):
+        if not self._cached_values:
+            return
+
+        for key, value in self._cached_values.items():
+            if key not in self._instances:
+                if not self._definition:
+                    Logger.log("w", "Tried to set value of setting %s that has no instance in container %s and the container has no definition", key, self._name)
+                    return
+
+                setting_definition = self._definition.findDefinitions(key = key)
+                if not setting_definition:
+                    Logger.log("w", "Tried to set value of setting %s that has no instance in container %s or its definition %s", key, self._name, self._definition.getName())
+                    return
+
+                instance = SettingInstance(setting_definition[0], self)
+                instance.propertyChanged.connect(self.propertyChanged)
+                self._instances[instance.definition.key] = instance
 
     ##  Set the value of a property of a SettingInstance.
     #
@@ -359,7 +393,7 @@ class InstanceContainer(QObject, ContainerInterface, PluginObject):
     ##  \copydoc ContainerInterface::serialize
     #
     #   Reimplemented from ContainerInterface
-    def serialize(self) -> str:
+    def serialize(self, ignored_metadata_keys: Optional[List] = None) -> str:
         self._instantiateCachedValues()
         parser = configparser.ConfigParser(interpolation = None)
 
@@ -372,9 +406,12 @@ class InstanceContainer(QObject, ContainerInterface, PluginObject):
         parser["general"]["name"] = str(self._name)
         parser["general"]["definition"] = str(self._definition.getId())
 
+        if ignored_metadata_keys is None:
+            ignored_metadata_keys = []
         parser["metadata"] = {}
         for key, value in self._metadata.items():
-            parser["metadata"][key] = str(value)
+            if key not in ignored_metadata_keys:
+                parser["metadata"][key] = str(value)
 
         parser["values"] = {}
         for key, instance in sorted(self._instances.items()):
@@ -410,7 +447,7 @@ class InstanceContainer(QObject, ContainerInterface, PluginObject):
         configuration_type = None
         try:
             parser = self._readAndValidateSerialized(serialized)
-            configuration_type = parser['metadata'].get('type')
+            configuration_type = parser["metadata"].get("type")
         except Exception as e:
             Logger.log("d", "Could not get configuration type: %s", e)
         return configuration_type
@@ -454,6 +491,7 @@ class InstanceContainer(QObject, ContainerInterface, PluginObject):
 
         if "metadata" in parser:
             self._metadata = dict(parser["metadata"])
+        self.metaDataChanged.emit(self) #In case this instance was re-used.
 
         if "values" in parser:
             self._cached_values = dict(parser["values"])

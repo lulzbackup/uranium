@@ -5,6 +5,7 @@ from typing import List, Dict, Any, Optional
 
 import UM.Decorators
 from UM.Signal import Signal
+from UM.Settings.PropertyEvaluationContext import PropertyEvaluationContext
 
 
 ##  Shared interface between setting container types
@@ -62,7 +63,7 @@ class ContainerInterface:
     #   \param name \type{string} The name of the property to retrieve.
     #
     #   \return The specified property value of the container item corresponding to key, or None if not found.
-    def getProperty(self, key: str, property_name: str) -> Any:
+    def getProperty(self, key: str, property_name: str, context: Optional[PropertyEvaluationContext] = None) -> Any:
         pass
 
     ##  Get whether the container item has a specific property.
@@ -80,8 +81,10 @@ class ContainerInterface:
     #   The serialized representation of the container can be used to write the
     #   container to disk or send it over the network.
     #
+    #   \param ignored_metadata_keys A list of keys that should be ignored when it serializes the metadata.
+    #
     #   \return \type{string} A string representation of this container.
-    def serialize(self) -> str:
+    def serialize(self, ignored_metadata_keys: Optional[List] = None) -> str:
         pass
 
     ##  Deserialize the container from a string representation.

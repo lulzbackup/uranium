@@ -68,7 +68,7 @@ class ContainerTestPlugin(ContainerInterface, PluginObject):
     #   None.
     #
     #   \return Always returns None.
-    def getProperty(self, key, property_name):
+    def getProperty(self, key, property_name, context = None):
         pass
 
     def hasProperty(self, key, property_name):
@@ -77,7 +77,7 @@ class ContainerTestPlugin(ContainerInterface, PluginObject):
     ##  Serializes the container to a string representation.
     #
     #   This method is not implemented in the mock container.
-    def serialize(self):
+    def serialize(self, ignored_metadata_keys=[]):
         raise NotImplementedError()
 
     ##  Deserializes the container from a string representation.
