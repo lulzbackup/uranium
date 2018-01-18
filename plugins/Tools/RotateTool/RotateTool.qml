@@ -63,7 +63,7 @@ Item
         flow: Grid.TopToBottom;
         spacing: UM.Theme.getSize("default_margin").width / 2;
 
-        Text
+        Label
         {
             height: UM.Theme.getSize("setting_control").height;
             text: "X";
@@ -72,7 +72,7 @@ Item
             verticalAlignment: Text.AlignVCenter;
         }
 
-        Text
+        Label
         {
             height: UM.Theme.getSize("setting_control").height;
             text: "Y";
@@ -81,7 +81,7 @@ Item
             verticalAlignment: Text.AlignVCenter;
         }
 
-        Text
+        Label
         {
             height: UM.Theme.getSize("setting_control").height;
             text: "Z";
