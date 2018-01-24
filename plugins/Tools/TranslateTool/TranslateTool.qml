@@ -13,6 +13,8 @@ Item
     height: childrenRect.height
     UM.I18nCatalog { id: catalog; name:"uranium"}
 
+    Keys.forwardTo: parent
+
     property string xText
     property string yText
     property string zText
@@ -54,6 +56,7 @@ Item
     Button
     {
         id: resetPositionButton
+	Keys.forwardTo: parent
 
         //: Reset position tool button
         text: catalog.i18nc("@action:button","Center on Build Plate")
@@ -72,6 +75,7 @@ Item
     Button
     {
         id: dropToBuildplateButton
+	Keys.forwardTo: parent
 
         //: Drop to build plate tool button
         text: catalog.i18nc("@action:button","Drop to Build Plate");
@@ -84,6 +88,7 @@ Item
         onClicked: UM.ActiveTool.triggerAction("dropToBuildplate")
         visible: false
     }
+
     Grid
     {
         id: textfields;
@@ -95,102 +100,145 @@ Item
         flow: Grid.TopToBottom;
         spacing: UM.Theme.getSize("default_margin").width / 2;
 
-        Label
+        Text
         {
             height: UM.Theme.getSize("setting_control").height;
             text: "X";
             font: UM.Theme.getFont("default");
             color: UM.Theme.getColor("x_axis");
             verticalAlignment: Text.AlignVCenter;
+            Keys.forwardTo: parent
         }
 
-        Label
+        Text
         {
             height: UM.Theme.getSize("setting_control").height;
             text: "Y";
             font: UM.Theme.getFont("default");
             color: UM.Theme.getColor("z_axis"); // This is intentional. The internal axis are switched.
             verticalAlignment: Text.AlignVCenter;
+            Keys.forwardTo: parent
         }
 
-        Label
+        Text
         {
             height: UM.Theme.getSize("setting_control").height;
             text: "Z";
             font: UM.Theme.getFont("default");
             color: UM.Theme.getColor("y_axis"); // This is intentional. The internal axis are switched.
             verticalAlignment: Text.AlignVCenter;
+            Keys.forwardTo: parent
         }
-        TextField
+
+
+        UM.TooltipArea
         {
-            width: UM.Theme.getSize("setting_control").width;
-            height: UM.Theme.getSize("setting_control").height;
-            property string unit: "mm";
-            style: UM.Theme.styles.text_field;
-            text: xText
-            validator: DoubleValidator
-            {
-                decimals: 4
-                locale: "en_US"
-            }
+            width: childrenRect.width;
+            height: childrenRect.height;
+            text: catalog.i18nc("@info:tooltip","Valid values are between -99999999.9999 and 99999999.9999")
+            Keys.forwardTo: parent
 
-            onEditingFinished:
+            TextField
             {
-                var modified_text = text.replace(",", ".") // User convenience. We use dots for decimal values
-                UM.ActiveTool.setProperty("X", modified_text);
-            }
+                width: UM.Theme.getSize("setting_control").width;
+                height: UM.Theme.getSize("setting_control").height;
+                property string unit: "mm";
+                style: UM.Theme.styles.text_field;
+                text: xText
+                validator: DoubleValidator
+                {
+                    decimals: 4
+                    locale: "en_US"
+                    top: 99999999.9999
+                    bottom: -99999999.9999
+                    notation: DoubleValidator.StandardNotation
+                }
 
-            Keys.onPressed:
-            {
-                base.inc_dec("X", event);
-            }
-        }
-        TextField
-        {
-            width: UM.Theme.getSize("setting_control").width;
-            height: UM.Theme.getSize("setting_control").height;
-            property string unit: "mm";
-            style: UM.Theme.styles.text_field;
-            text: yText
-            validator: DoubleValidator
-            {
-                decimals: 4
-                locale: "en_US"
-            }
 
-            onEditingFinished:
-            {
-                var modified_text = text.replace(",", ".") // User convenience. We use dots for decimal values
-                UM.ActiveTool.setProperty("Y", modified_text);
-            }
+                onEditingFinished:
+                {
+                    var modified_text = text.replace(",", ".") // User convenience. We use dots for decimal values
+                    UM.ActiveTool.setProperty("X", modified_text);
+                }
 
-            Keys.onPressed:
-            {
-                base.inc_dec("Y", event);
+                Keys.onPressed:
+                {
+                    base.inc_dec("X", event);
+                }
             }
         }
-        TextField
+
+        UM.TooltipArea
         {
-            width: UM.Theme.getSize("setting_control").width;
-            height: UM.Theme.getSize("setting_control").height;
-            property string unit: "mm";
-            style: UM.Theme.styles.text_field;
-            text: zText
-            validator: DoubleValidator
+            width: childrenRect.width;
+            height: childrenRect.height;
+            text: catalog.i18nc("@info:tooltip","Valid values are between -99999999.9999 and 99999999.9999")
+            Keys.forwardTo: parent
+
+            TextField
             {
-                decimals: 4
-                locale: "en_US"
+                width: UM.Theme.getSize("setting_control").width;
+                height: UM.Theme.getSize("setting_control").height;
+                property string unit: "mm";
+                style: UM.Theme.styles.text_field;
+                text: yText
+                validator: DoubleValidator
+                {
+                    decimals: 4
+                    locale: "en_US"
+                    top: 99999999.9999
+                    bottom: -99999999.9999
+                    notation: DoubleValidator.StandardNotation
+                }
+
+                onEditingFinished:
+                {
+                    var modified_text = text.replace(",", ".") // User convenience. We use dots for decimal values
+                    UM.ActiveTool.setProperty("Y", modified_text);
+                }
+
+                Keys.onPressed:
+                {
+                    base.inc_dec("Y", event);
+                }
             }
-            onEditingFinished:
+        }
+
+        UM.TooltipArea
+        {
+            width: childrenRect.width;
+            height: childrenRect.height;
+            text: catalog.i18nc("@info:tooltip","Valid values are between -99999999.9999 and 99999999.9999")
+            Keys.forwardTo: parent
+
+            TextField
             {
-                var modified_text = text.replace(",", ".") // User convenience. We use dots for decimal values
-                UM.ActiveTool.setProperty("Z", modified_text);
+                width: UM.Theme.getSize("setting_control").width;
+                height: UM.Theme.getSize("setting_control").height;
+                property string unit: "mm";
+                style: UM.Theme.styles.text_field;
+                text: zText
+                validator: DoubleValidator
+                {
+                    decimals: 4
+                    locale: "en_US"
+                    top: 99999999.9999
+                    bottom: -99999999.9999
+                    notation: DoubleValidator.StandardNotation
+                }
+
+                onEditingFinished:
+                {
+                    var modified_text = text.replace(",", ".") // User convenience. We use dots for decimal values
+                    UM.ActiveTool.setProperty("Z", modified_text);
+                }
+
+                Keys.onPressed:
+                {
+                    base.inc_dec("Z", event);
+                }
             }
 
-            Keys.onPressed:
-            {
-                base.inc_dec("Z", event);
-            }
         }
     }
 
