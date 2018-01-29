@@ -48,11 +48,11 @@ class MainWindow(QQuickWindow):
         self.setPosition(int(self._preferences.getValue("general/window_left")), int(self._preferences.getValue("general/window_top")))
 
         # For Qt 5.9 we have to apparently explicitly set flags for buttons
-        qt_major_version, qt_minor_version, qt_patch_version = qVersion().split(".")
-        if(( int(qt_major_version) >  5) or
-           ( int(qt_major_version) == 5 and int(qt_minor_version) >  9 ) or
-           ( int(qt_major_version) == 5 and int(qt_minor_version) == 9 and int(qt_patch_version) >= 0 )):
-           self.setFlags(self.flags() | Qt.WindowMinMaxButtonsHint | Qt.WindowCloseButtonHint)
+        # qt_major_version, qt_minor_version, qt_patch_version = qVersion().split(".")
+        # if(( int(qt_major_version) >  5) or
+        #    ( int(qt_major_version) == 5 and int(qt_minor_version) >  9 ) or
+        #    ( int(qt_major_version) == 5 and int(qt_minor_version) == 9 and int(qt_patch_version) >= 0 )):
+        #    self.setFlags(self.flags() | Qt.WindowMinMaxButtonsHint | Qt.WindowCloseButtonHint)
 
         # Make sure restored geometry is not outside the currently available screens
         screen_found = False
