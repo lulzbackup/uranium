@@ -234,10 +234,7 @@ class RotateTool(Tool):
     #   \param X type(float)
     def setX(self, X):
         if float(X) != self._X_angle:
-            if float(X) > self._X_angle:
-                self._angle = float(X) - self._X_angle
-            else:
-                self._angle = self._X_angle - float(X)
+            self._angle = ((float(X) % 360) - (self._X_angle % 360)) % 360
 
             self.propertyChanged.emit()
             self._X_angle = float(X)
@@ -282,10 +279,7 @@ class RotateTool(Tool):
     #   \param Y type(float)
     def setY(self, Y):
         if float(Y) != self._Y_angle:
-            if float(Y) > self._Y_angle:
-                self._angle = float(Y) - self._Y_angle
-            else:
-                self._angle = self._Y_angle - float(Y)
+            self._angle = ((float(Y) % 360) - (self._Y_angle % 360)) % 360
 
             self.propertyChanged.emit()
             self._Y_angle = float(Y)
@@ -332,11 +326,7 @@ class RotateTool(Tool):
     #   \param Z type(float)
     def setZ(self, Z):
         if float(Z) != self._Z_angle:
-
-            if float(Z) > self._Z_angle:
-                self._angle = float(Z) - self._Z_angle
-            else:
-                self._angle = self._Z_angle - float(Z)
+            self._angle = ((float(Z) % 360) - (self._Z_angle % 360)) % 360
 
             self.propertyChanged.emit()
             self._Z_angle = float(Z)
