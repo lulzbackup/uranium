@@ -35,6 +35,8 @@ class LocalFileOutputDevice(OutputDevice):
         self.setDescription(catalog.i18nc("@info:tooltip", "Save to File"))
         self.setIconName("save")
 
+        self.first_run = True
+
         self._writing = False
         self.setPriority(1.5)
 
@@ -50,6 +52,15 @@ class LocalFileOutputDevice(OutputDevice):
     def requestWrite(self, nodes, file_name = None, limit_mimetypes = None, file_handler = None, **kwargs):
         if self._writing:
             raise OutputDeviceError.DeviceBusyError()
+
+        if self.first_run:
+            if Platform.isWindows():
+                Preferences.getInstance().setValue("local_file/dialog_save_path", "clsid:0AC0837C-BBF8-452A-850D-79D08E667CA7")
+            elif Platform.isLinux():
+                Preferences.getInstance().setValue("local_file/dialog_save_path", "/media")
+            elif Platform.isOSX():
+                Preferences.getInstance().setValue("local_file/dialog_save_path", "/Volumes")
+            self.first_run = False
 
         # Set up and display file dialog
         dialog = QFileDialog()
@@ -103,7 +114,11 @@ class LocalFileOutputDevice(OutputDevice):
             dialog.selectFile(file_name)
 
         stored_directory = Preferences.getInstance().getValue("local_file/dialog_save_path")
-        dialog.setDirectory(stored_directory)
+        if str.startswith(stored_directory, "clsid:"):
+            url = QUrl(stored_directory)
+            dialog.setDirectoryUrl(url)
+        else:
+            dialog.setDirectory(stored_directory)
 
         if not dialog.exec_():
             raise OutputDeviceError.UserCanceledError()
